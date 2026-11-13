@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Circuit Watch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap">
+<style>
+  /* Layout: one reading column. Summary filters, then one card per stock, then the track record and notes. */
+  :root {
+    --bg: #f4f6f8; --surface: #ffffff; --fg: #131a22; --muted: #5a6573; --line: #dde2e8;
+    --accent: #0d6f7a; --up: #0d7f8a;
+    --high: #c4261d; --high-soft: #fbe3e1;
+    --elev: #b4520a; --elev-soft: #fbe8d6;
+    --watch: #7f6200; --watch-soft: #f8f0cf;
+    --low: #1c7a52; --low-soft: #dff2e8;
+    --font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-data: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0e1217; --surface: #171d25; --fg: #e7ecf2; --muted: #96a2b0; --line: #28313c;
+      --accent: #4fc0cc; --up: #4fc0cc;
+      --high: #ff7b72; --high-soft: #3d1a19;
+      --elev: #f0a35e; --elev-soft: #3a2812;
+      --watch: #e5c64f; --watch-soft: #38310f;
+      --low: #5fd09a; --low-soft: #12342a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1217; --surface: #171d25; --fg: #e7ecf2; --muted: #96a2b0; --line: #28313c;
+    --accent: #4fc0cc; --up: #4fc0cc;
+    --high: #ff7b72; --high-soft: #3d1a19;
+    --elev: #f0a35e; --elev-soft: #3a2812;
+    --watch: #e5c64f; --watch-soft: #38310f;
+    --low: #5fd09a; --low-soft: #12342a;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: var(--font-body); font-size: 15px; line-height: 1.55;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-top: max(24px, env(safe-area-inset-top, 0px));
+    padding-bottom: max(48px, env(safe-area-inset-bottom, 0px));
+  }
+  .wrap { max-width: 820px; margin: 0 auto; display: flex; flex-direction: column; gap: 26px; }
+  h1 { font-size: 30px; line-height: 1.1; margin: 0 0 6px; font-weight: 700; letter-spacing: -0.02em; }
+  h2 { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+  h3 { margin: 0; font-size: 18px; font-weight: 600; }
+  p { margin: 0; }
+  a { color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .lede { color: var(--muted); max-width: 60ch; }
+  .meta { color: var(--muted); font-size: 13px; margin-top: 8px; }
+  .mono { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+
+  .banner { background: var(--elev-soft); border-radius: 8px; padding: 10px 14px; font-size: 14px; max-width: 72ch; }
+  .banner + .banner { margin-top: 8px; }
+
+  /* filters */
+  .summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+  .sbtn {
+    font: inherit; text-align: left; cursor: pointer; background: var(--surface); color: var(--fg);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px;
+  }
+  .sbtn b { font-family: var(--font-data); font-size: 22px; line-height: 1.1; font-weight: 600; }
+  .sbtn span { font-size: 12.5px; color: var(--muted); }
+  .sbtn[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .sbtn.high b { color: var(--high); } .sbtn.elev b { color: var(--elev); }
+  .sbtn.watch b { color: var(--watch); } .sbtn.low b { color: var(--low); }
+  .pulse { font-size: 13px; color: var(--muted); margin-top: 10px; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; margin-bottom: 14px; }
+  .controls input[type="search"], .controls select {
+    font: inherit; font-size: 14px; color: var(--fg); background: var(--surface);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0;
+  }
+  .controls input[type="search"] { flex: 1 1 180px; }
+  .controls label { font-size: 13.5px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+
+  /* cards */
+  #list { display: flex; flex-direction: column; gap: 12px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .top { display: flex; flex-wrap: wrap; gap: 8px 12px; justify-content: space-between; align-items: flex-start; }
+  .top > div { min-width: 0; }
+  .idline { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+  .chip { font-size: 11.5px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .name { color: var(--muted); font-size: 13.5px; overflow-wrap: anywhere; }
+  .pill { font-size: 12.5px; font-weight: 600; padding: 3px 11px; border-radius: 999px; white-space: nowrap; }
+  .pill.high { background: var(--high-soft); color: var(--high); }
+  .pill.elev { background: var(--elev-soft); color: var(--elev); }
+  .pill.watch { background: var(--watch-soft); color: var(--watch); }
+  .pill.low { background: var(--low-soft); color: var(--low); }
+  .status { font-weight: 500; }
+  .mid { display: grid; grid-template-columns: minmax(150px, 220px) 1fr; gap: 14px 18px; align-items: center; }
+  .spark { width: 100%; height: auto; display: block; }
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px 14px; margin: 0; }
+  .facts div { min-width: 0; }
+  .facts dt { font-size: 11.5px; color: var(--muted); }
+  .facts dd { margin: 0; font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 13.5px; font-weight: 500; overflow-wrap: anywhere; }
+  .reasons { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; font-size: 14px; }
+  .none { color: var(--muted); font-size: 14px; }
+  .empty { background: var(--surface); border: 1px dashed var(--line); border-radius: 12px; padding: 24px 16px; color: var(--muted); text-align: center; }
+
+  /* track record */
+  .tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; min-width: 520px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+  th { font-size: 12px; color: var(--muted); font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
+  td.num, th.num { text-align: right; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+  td.worse { color: var(--high); font-weight: 600; }
+  .fine { font-size: 13px; color: var(--muted); max-width: 72ch; margin-top: 10px; }
+  .fine + .fine { margin-top: 6px; }
+  details { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; }
+  details + details { margin-top: 8px; }
+  summary { cursor: pointer; font-weight: 600; }
+  details p, details ul { margin-top: 10px; font-size: 14px; max-width: 70ch; }
+  details ul { padding-left: 18px; display: flex; flex-direction: column; gap: 5px; }
+  footer { font-size: 13px; color: var(--muted); max-width: 72ch; }
+
+  @media (max-width: 560px) {
+    h1 { font-size: 26px; }
+    .summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .mid { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .sbtn { transition: border-color .15s, box-shadow .15s; }
+  }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header>
+    <h1>Circuit Watch</h1>
+    <p class="lede">Every NSE and BSE stock that has been closing at its upper price limit session after session, with signs that the run may be breaking.</p>
+    <p class="meta" id="updated">Loading the latest scan...</p>
+    <p class="pulse" id="pulse"></p>
+  </header>
+
+  <div id="notes"></div>
+
+  <section aria-labelledby="h-stocks">
+    <h2 id="h-stocks">Stocks in or just out of a streak</h2>
+    <div class="summary" id="summary" role="group" aria-label="Filter by risk level"></div>
+    <div class="controls" style="margin-top:14px">
+      <input type="search" id="q" placeholder="Search symbol or name" aria-label="Search symbol or name">
+      <select id="exch" aria-label="Exchange">
+        <option value="all">NSE and BSE</option>
+        <option value="NSE">NSE only</option>
+        <option value="BSE">BSE only</option>
+      </select>
+      <select id="sort" aria-label="Sort order">
+        <option value="risk">Highest risk first</option>
+        <option value="recent">Streak ended most recently</option>
+        <option value="len">Longest streak</option>
+        <option value="gain">Biggest gain over the streak</option>
+      </select>
+      <label><input type="checkbox" id="hideold" checked> Hide streaks that ended 6+ sessions ago</label>
+    </div>
+    <div id="list" aria-live="polite"></div>
+  </section>
+
+  <section id="track" aria-labelledby="h-track" hidden>
+    <h2 id="h-track">How well have the warnings worked?</h2>
+    <p class="fine" id="track-intro" style="margin-top:0;margin-bottom:12px"></p>
+    <div class="tablewrap"><table id="t-levels"></table></div>
+    <p class="fine" style="margin-top:16px">By individual sign, strongest first:</p>
+    <div class="tablewrap" style="margin-top:8px"><table id="t-signals"></table></div>
+    <p class="fine" id="track-caveats"></p>
+  </section>
+
+  <section aria-labelledby="h-about">
+    <h2 id="h-about">About this page</h2>
+    <details>
+      <summary>How the levels are decided</summary>
+      <p>Each stock gets points for warning signs. The total sets the level:</p>
+      <ul>
+        <li><b>High</b> (7 or more): locked at its lower circuit, did not trade at all, or the streak ended with several other signs at once.</li>
+        <li><b>Elevated</b> (4 to 6): the streak ended today, or ended with a heavy-volume reversal.</li>
+        <li><b>Watch</b> (2 to 3): early or mild signs, such as a streak that ended a few days ago on rising volume.</li>
+        <li><b>Low</b>: still running with no warning signs, or ended and quiet.</li>
+      </ul>
+      <p>The signs: streak ended today (4), locked at lower circuit (6), no trades in the latest session (3), touched the upper circuit but closed lower (3), volume 3x to 6x the streak's typical day (2 to 3), widened trading range (1), fell 2% or more (1), delivery share fell, NSE only (1), 10% below its post-run peak (1), run gained 100% or more (1), thin trading under Rs 25 lakh a day (1). These point values are a starting guess. The table above shows how each sign has actually performed.</p>
+    </details>
+    <details>
+      <summary>What this page cannot see</summary>
+      <ul>
+        <li>The order book. Whether buyers are still waiting at the upper circuit, or sellers are piling up, is the best clue to a coming lock, and the exchanges' end-of-day files do not include it.</li>
+        <li>Overnight news. If a stock opens at its lower circuit after bad news, no end-of-day reading could have shown it.</li>
+        <li>Stocks that did not trade at all. They are missing from the exchange files, so a stock locked with no trades shows up only as having disappeared right after a run.</li>
+        <li>Surveillance listings, price band changes and bulk deals. Check the exchanges for these.</li>
+      </ul>
+    </details>
+  </section>
+
+  <footer>
+    <p>This is information drawn from public exchange files, not investment advice. A warning is a reason to look closer, not a prediction, and a stock with no warning can still fall. Check the official announcements on <a href="https://www.nseindia.com" target="_blank" rel="noopener">nseindia.com</a> and <a href="https://www.bseindia.com" target="_blank" rel="noopener">bseindia.com</a> before acting on anything here.</p>
+  </footer>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var DATA = null;
+  var LEVELS = [
+    { key: "all", label: "All", cls: "" },
+    { key: "High", label: "High", cls: "high" },
+    { key: "Elevated", label: "Elevated", cls: "elev" },
+    { key: "Watch", label: "Watch", cls: "watch" },
+    { key: "Low", label: "Low", cls: "low" }
+  ];
+  var LEVEL_CLS = { High: "high", Elevated: "elev", Watch: "watch", Low: "low" };
+  var state = { level: "all", exch: "all", sort: "risk", hideold: true, q: "" };
+
+  function $(id) { return document.getElementById(id); }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function rupees(v) { return "₹" + Number(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function value(lakh) {
+    if (lakh == null) return "n/a";
+    return lakh >= 100 ? "₹" + (lakh / 100).toFixed(1) + " cr" : "₹" + Math.round(lakh) + " lakh";
+  }
+  function pct(v, sign) { return (sign && v > 0 ? "+" : "") + v.toFixed(1) + "%"; }
+  function dateLabel(iso) {
+    var d = new Date(iso + "T00:00:00");
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+  }
+
+  function store(key, val) { try { localStorage.setItem("cw." + key, val); } catch (e) {} }
+  function recall(key) { try { return localStorage.getItem("cw." + key); } catch (e) { return null; } }
+
+  function sparkline(chart) {
+    var pts = chart.filter(function (p) { return p[0] != null; });
+    if (pts.length < 2) return "";
+    var W = 200, H = 60, pad = 5;
+    var lo = Math.min.apply(null, pts.map(function (p) { return p[0]; }));
+    var hi = Math.max.apply(null, pts.map(function (p) { return p[0]; }));
+    var span = hi - lo || 1;
+    var n = chart.length;
+    function x(i) { return pad + (W - 2 * pad) * (i / (n - 1)); }
+    function y(v) { return H - pad - (H - 2 * pad) * ((v - lo) / span); }
+    var d = "", started = false, dots = "", lastI = -1;
+    chart.forEach(function (p, i) {
+      if (p[0] == null) { started = false; return; }
+      d += (started ? "L" : "M") + x(i).toFixed(1) + " " + y(p[0]).toFixed(1) + " ";
+      started = true;
+      lastI = i;
+      if (p[1] === 1) dots += '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(p[0]).toFixed(1) + '" r="2.4" fill="var(--up)"/>';
+      if (p[1] === -1) dots += '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(p[0]).toFixed(1) + '" r="2.8" fill="var(--high)"/>';
+    });
+    var last = chart[lastI];
+    var end = '<circle cx="' + x(lastI).toFixed(1) + '" cy="' + y(last[0]).toFixed(1) + '" r="3.4" fill="var(--fg)"/>';
+    return '<svg class="spark" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="Closing price over the last ' + n +
+      ' sessions. Teal dots mark upper-circuit closes, red dots mark lower-circuit closes.">' +
+      '<path d="' + d + '" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>' +
+      dots + end + "</svg>";
+  }
+
+  function card(s) {
+    var cls = LEVEL_CLS[s.level];
+    var reasons = s.reasons.length
+      ? '<ul class="reasons">' + s.reasons.map(function (r) { return "<li>" + esc(r) + "</li>"; }).join("") + "</ul>"
+      : '<p class="none">No warning signs in the latest session.</p>';
+    var also = s.also_on ? '<span class="chip">also on ' + esc(s.also_on) + "</span>" : "";
+    var facts = [
+      ["Last close", rupees(s.price)],
+      ["Price limit", "±" + s.band + "%"],
+      ["Streak", s.run_len + " sessions"],
+      ["Gain over streak", pct(s.run_gain_pct, true)],
+      ["Volume vs streak", s.vol_ratio == null ? "n/a" : s.vol_ratio.toFixed(1) + "x"],
+      ["Typical daily trade", value(s.avg_value_lakh)]
+    ].map(function (f) { return "<div><dt>" + f[0] + "</dt><dd>" + esc(f[1]) + "</dd></div>"; }).join("");
+    return '<article class="card">' +
+      '<div class="top"><div><div class="idline"><h3>' + esc(s.symbol) + '</h3><span class="chip">' + esc(s.exch) +
+      '</span><span class="chip">' + esc(s.series) + "</span>" + also + "</div>" +
+      (s.name ? '<p class="name">' + esc(s.name) + "</p>" : "") + "</div>" +
+      '<span class="pill ' + cls + '">' + esc(s.level) + "</span></div>" +
+      '<p class="status">' + esc(s.status) + "</p>" +
+      '<div class="mid">' + sparkline(s.chart) + '<dl class="facts">' + facts + "</dl></div>" + reasons + "</article>";
+  }
+
+  function visible() {
+    var q = state.q.trim().toLowerCase();
+    return DATA.stocks.filter(function (s) {
+      if (state.exch !== "all" && s.exch !== state.exch) return false;
+      if (state.hideold && s.since_end > 5) return false;
+      if (q && (s.symbol + " " + s.name).toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    });
+  }
+
+  function render() {
+    var base = visible();
+    var counts = { all: base.length, High: 0, Elevated: 0, Watch: 0, Low: 0 };
+    base.forEach(function (s) { counts[s.level]++; });
+    $("summary").innerHTML = LEVELS.map(function (l) {
+      return '<button type="button" class="sbtn ' + l.cls + '" data-level="' + l.key + '" aria-pressed="' +
+        (state.level === l.key) + '"><b>' + counts[l.key] + "</b><span>" + l.label + "</span></button>";
+    }).join("");
+
+    var rows = base.filter(function (s) { return state.level === "all" || s.level === state.level; });
+    var sorters = {
+      risk: function (a, b) { return b.score - a.score || b.run_len - a.run_len; },
+      recent: function (a, b) { return a.since_end - b.since_end || b.score - a.score; },
+      len: function (a, b) { return b.run_len - a.run_len; },
+      gain: function (a, b) { return b.run_gain_pct - a.run_gain_pct; }
+    };
+    rows.sort(sorters[state.sort]);
+    $("list").innerHTML = rows.length ? rows.map(card).join("") :
+      '<div class="empty">No stocks match. Try another level or turn off the filters.</div>';
+  }
+
+  function renderHeader() {
+    var dates = Object.keys(DATA.data_dates).map(function (k) { return k + " " + dateLabel(DATA.data_dates[k]); }).join(" · ");
+    var gen = new Date(DATA.generated_at);
+    $("updated").textContent = "Data through " + dates + ". Scanned " +
+      gen.toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" }) + " IST.";
+    $("pulse").textContent = Object.keys(DATA.market).map(function (k) {
+      var m = DATA.market[k];
+      return k + ": " + m.locked_up + " closed at the upper limit, " + m.locked_down + " at the lower limit in the last session.";
+    }).join("  ");
+
+    var notes = DATA.notes.slice();
+    var ageDays = (Date.now() - gen.getTime()) / 86400000;
+    if (ageDays > 3.5) notes.push("This scan is " + Math.floor(ageDays) + " days old. The daily update may have stopped.");
+    var dateSet = {};
+    Object.keys(DATA.data_dates).forEach(function (k) { dateSet[DATA.data_dates[k]] = 1; });
+    if (Object.keys(dateSet).length > 1) notes.push("NSE and BSE data end on different days, so check the dates above.");
+    if (DATA.stats === null) notes.push("There is not yet enough saved history to measure how the warnings have worked.");
+    $("notes").innerHTML = notes.map(function (n) { return '<p class="banner">' + esc(n) + "</p>"; }).join("");
+  }
+
+  function renderTrack() {
+    var st = DATA.stats;
+    if (!st) return;
+    $("track").hidden = false;
+    var base = st.levels.Low;
+    $("track-intro").textContent = "For " + st.events.toLocaleString("en-IN") + " past cases, the scanner scored every stock in or just out of a streak, then checked the next " +
+      st.forward + " sessions. A warning is only useful if its row is clearly worse than the baseline row.";
+
+    function row(label, r, isBase, cls) {
+      if (!r) return "";
+      var few = r.n < 30 ? ' <span style="color:var(--muted)">(few cases)</span>' : "";
+      var dropCls = !isBase && base && r.n >= 30 && r.drop >= 1.5 * base.drop && r.drop - base.drop >= 3 ? " worse" : "";
+      var lockCls = !isBase && base && r.n >= 30 && r.lock >= 1.5 * base.lock && r.lock - base.lock >= 3 ? " worse" : "";
+      return "<tr><td>" + esc(label) + few + '</td><td class="num">' + r.n.toLocaleString("en-IN") +
+        '</td><td class="num">' + pct(r.avg_ret, true) + '</td><td class="num' + dropCls + '">' + r.drop.toFixed(1) +
+        '%</td><td class="num' + lockCls + '">' + r.lock.toFixed(1) + "%</td></tr>";
+    }
+    var head = function (first) {
+      return "<thead><tr><th>" + first + '</th><th class="num">Cases</th><th class="num">Average change, next ' + st.forward +
+        ' sessions</th><th class="num">Fell 5% or more at some point</th><th class="num">Hit a lower circuit</th></tr></thead>';
+    };
+    $("t-levels").innerHTML = head("Reading") + "<tbody>" +
+      row("No warning signs (baseline)", st.levels.Low, true) +
+      row("Watch", st.levels.Watch, false) + row("Elevated", st.levels.Elevated, false) +
+      row("High", st.levels.High, false) + "</tbody>";
+    $("t-signals").innerHTML = head("Sign") + "<tbody>" +
+      st.signals.map(function (s) { return row(s.label, s, false); }).join("") + "</tbody>";
+    $("track-caveats").textContent = "Cases overlap: the same stock on consecutive days counts several times. Days with no trades are invisible in the exchange files, so lock-ins are probably undercounted. Red numbers are at least 1.5 times the baseline. How a group behaved before says little about the next stock.";
+  }
+
+  function wire() {
+    $("summary").addEventListener("click", function (e) {
+      var b = e.target.closest("button[data-level]");
+      if (!b) return;
+      state.level = b.getAttribute("data-level");
+      render();
+    });
+    $("q").addEventListener("input", function (e) { state.q = e.target.value; render(); });
+    $("exch").addEventListener("change", function (e) { state.exch = e.target.value; store("exch", state.exch); render(); });
+    $("sort").addEventListener("change", function (e) { state.sort = e.target.value; store("sort", state.sort); render(); });
+    $("hideold").addEventListener("change", function (e) { state.hideold = e.target.checked; store("hideold", state.hideold ? "1" : "0"); render(); });
+  }
+
+  function restore() {
+    var e = recall("exch"), s = recall("sort"), h = recall("hideold");
+    if (e === "NSE" || e === "BSE" || e === "all") state.exch = e;
+    if (s && $("sort").querySelector('option[value="' + s + '"]')) state.sort = s;
+    if (h === "0") state.hideold = false;
+    $("exch").value = state.exch;
+    $("sort").value = state.sort;
+    $("hideold").checked = state.hideold;
+  }
+
+  restore();
+  wire();
+  fetch("data.json", { cache: "no-store" })
+    .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+    .then(function (d) { DATA = d; renderHeader(); render(); renderTrack(); })
+    .catch(function (err) {
+      $("updated").textContent = "";
+      $("notes").innerHTML = '<p class="banner">Could not load the scan results (' + esc(err.message) +
+        "). If you opened this file straight from your computer, open the website address instead, or see the README for how to view it locally.</p>";
+      $("list").innerHTML = "";
+    });
+})();
+</script>
+</body>
+</html>
