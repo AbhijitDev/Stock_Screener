@@ -1,0 +1,60 @@
+# Runs the scan every weekday evening and publishes the website.
+# In your repository, create a file named  .github/workflows/daily.yml  and paste all of this into it.
+
+name: Daily scan
+
+on:
+  schedule:
+    - cron: "30 13 * * 1-5"      # 7:00 pm IST, Monday to Friday, after both exchanges publish their files
+  workflow_dispatch:             # lets you also start it by hand from the Actions tab
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Restore saved exchange files
+        uses: actions/cache/restore@v4
+        with:
+          path: cache
+          key: exchange-files-${{ github.run_id }}
+          restore-keys: exchange-files-
+
+      - name: Scan every NSE and BSE stock
+        run: python scan.py --out site/data.json
+
+      - name: Save exchange files for tomorrow
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: cache
+          key: exchange-files-${{ github.run_id }}
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
